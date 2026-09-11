@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Connect App Store Connect · Panvio</title>
+
+<!--
+  ───────────────────────────────────────────────────────────────────────────
+  The desktop half of Panvio's App Store Connect handoff.
+
+  Apple will not serve a .p8 to mobile Safari, so the key needs a computer.
+  The phone shows a five letter code, this page claims it, and the key goes
+  straight from this browser into Panvio's vault while the phone watches.
+
+  ── This page loads nothing ────────────────────────────────────────────────
+
+  No CDN font, no analytics, no third party script, no image. Everything is
+  inline. A page that asks for a private key should not be in a position where
+  somebody else's server can change what it does, and every external resource
+  is exactly that position.
+
+  ── And it stores nothing ──────────────────────────────────────────────────
+
+  The session token lives in a variable and dies with the tab. No cookie, so
+  no CSRF surface and nothing for a cross-site request to ride on. No
+  localStorage, so closing the tab really is the end of it.
+
+  ── The key does not rest here ─────────────────────────────────────────────
+
+  It is read in the browser, checked in the browser, and posted once. GitHub
+  Pages serves this file and never sees it: the fetch goes to a different
+  origin entirely.
+  ───────────────────────────────────────────────────────────────────────────
+-->
+
+<style>
+  /* The app's dark palette, so this reads as the same product. A page whose
+     look disagrees with the app it serves is a page worth hesitating over,
+     and hesitating is correct when somebody is handing over a private key. */
+  :root {
+    --bg: #0A0A0B;
+    --card: #131316;
+    --raised: #1A1A1F;
+    --high: #26262B;
+    --text: #F5F5F7;
+    --body: rgba(245,245,247,0.8);
+    --secondary: rgba(245,245,247,0.5);
+    --tertiary: rgba(245,245,247,0.32);
+    --border: rgba(245,245,247,0.12);
+    --success: #4CC38A;
+    --error: #F2555A;
+    --warning: #FFB773;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    /* A system stack rather than the app's Source Sans, because embedding a
+       font is the only way to match it without loading one from somewhere
+       else, and somewhere else is the thing this page refuses. */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 560px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  .mark {
+    font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--tertiary); margin-bottom: 40px;
+  }
+
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.4px; }
+  .lede { color: var(--secondary); margin: 0 0 32px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 18px; padding: 24px; margin-bottom: 16px;
+  }
+
+  label { display: block; font-size: 13px; letter-spacing: 0.1em;
+          text-transform: uppercase; color: var(--secondary); margin-bottom: 10px; }
+
+  input[type="text"], textarea {
+    width: 100%; background: var(--raised); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; font-size: 16px; font-family: inherit;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--text); }
+
+  #code {
+    font-size: 34px; letter-spacing: 10px; text-align: center;
+    text-transform: uppercase; font-variant-numeric: tabular-nums;
+    padding: 18px 16px;
+  }
+
+  button {
+    background: var(--text); color: var(--bg); border: 0;
+    border-radius: 14px; padding: 16px 22px; font-size: 16px;
+    font-weight: 600; font-family: inherit; cursor: pointer; width: 100%;
+  }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button.ghost { background: var(--high); color: var(--text); }
+
+  ol { margin: 0; padding-left: 22px; color: var(--body); }
+  ol li { margin-bottom: 12px; }
+  ol li::marker { color: var(--tertiary); }
+
+  a { color: var(--text); }
+
+  .drop {
+    border: 1px dashed var(--border); border-radius: 14px;
+    padding: 30px 20px; text-align: center; color: var(--secondary);
+    cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .drop.over { border-color: var(--text); background: var(--raised); }
+  .drop strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 17px; }
+
+  .loaded {
+    display: flex; align-items: center; gap: 12px;
+    border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px;
+  }
+  .loaded .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success); flex: none; }
+  .loaded .name { margin-right: auto; }
+  .loaded button { width: auto; background: none; color: var(--secondary);
+                   text-decoration: underline; padding: 4px 2px; font-size: 14px; }
+
+  .field { margin-top: 18px; }
+  .msg { margin-top: 12px; font-size: 14px; }
+  .msg.bad { color: var(--error); }
+  .msg.warn { color: var(--warning); }
+  .note { color: var(--tertiary); font-size: 14px; margin-top: 14px; }
+  .hidden { display: none !important; }
+
+  .done { text-align: center; padding: 20px 0 8px; }
+  .done .tick { font-size: 44px; line-height: 1; color: var(--success); }
+  .done h2 { margin: 16px 0 8px; font-size: 22px; }
+  .done p { color: var(--secondary); margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">Panvio</div>
+
+  <!-- ── 1. Which pairing is this ─────────────────────────────────────── -->
+  <section id="step-code">
+    <h1>Enter the code from your phone</h1>
+    <p class="lede">Panvio is showing you five letters. Type them here.</p>
+    <div class="card">
+      <label for="code">Code</label>
+      <input id="code" type="text" inputmode="latin" autocomplete="off"
+             autocapitalize="characters" spellcheck="false" maxlength="7"
+             aria-describedby="code-msg">
+      <div class="field"><button id="claim" disabled>Continue</button></div>
+      <div id="code-msg" class="msg" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── 2. Make the key and hand it over ─────────────────────────────── -->
+  <section id="step-key" class="hidden">
+    <h1>Create the key</h1>
+    <p class="lede">Apple only lets you download this file on a computer, which
+      is why your phone sent you here.</p>
+
+    <div class="card">
+      <ol>
+        <li>Sign in at <a href="https://appstoreconnect.apple.com/access/integrations/api"
+            target="_blank" rel="noopener noreferrer">appstoreconnect.apple.com</a>,
+            then go to Users and Access &gt; Integrations &gt; Team Keys.</li>
+        <li>Click the + button. Name the key Panvio, set Access to App Manager,
+            then click Generate.</li>
+        <li>Click Download next to the new key. Apple gives you this file once.</li>
+        <li>Copy the Issuer ID from the top of the page.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <label>The key file</label>
+      <div id="drop" class="drop" tabindex="0" role="button"
+           aria-label="Choose or drop your .p8 key file">
+        <strong>Drop the .p8 here</strong>
+        or click to choose it
+      </div>
+      <div id="loaded" class="loaded hidden">
+        <span class="dot"></span>
+        <span class="name" id="filename"></span>
+        <button id="clear" type="button">Clear</button>
+      </div>
+      <input id="file" type="file" accept=".p8,application/x-pkcs8" class="hidden">
+      <div id="key-msg" class="msg" role="status" aria-live="polite"></div>
+
+      <div class="field">
+        <label for="keyId">Key ID</label>
+        <input id="keyId" type="text" autocomplete="off" spellcheck="false"
+               autocapitalize="characters" placeholder="ABC123XYZ9">
+      </div>
+      <div class="field">
+        <label for="issuerId">Issuer ID</label>
+        <input id="issuerId" type="text" autocomplete="off" spellcheck="false"
+               placeholder="57246542-96fe-1a63-e053-0824d011072a">
+      </div>
+
+      <div class="field"><button id="send" disabled>Send it to Panvio</button></div>
+      <div id="send-msg" class="msg" role="status" aria-live="polite"></div>
+      <p class="note">Your key goes straight to Panvio and is encrypted there.
+        This page keeps no copy and stores nothing in your browser.</p>
+    </div>
+  </section>
+
+  <!-- ── 3. Done ──────────────────────────────────────────────────────── -->
+  <section id="step-done" class="hidden">
+    <div class="card done">
+      <div class="tick">&checkmark;</div>
+      <h2>That is everything</h2>
+      <p>Go back to your phone. Panvio has already moved on.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API = 'https://mucbbn1q05.execute-api.us-east-2.amazonaws.com';
+
+  /* The session token, in a variable and nowhere else. It dies with the tab,
+     which is exactly what should happen when somebody walks away. */
+  var session = null;
+  var userCode = null;
+  var keyText = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) {
+    ['step-code', 'step-key', 'step-done'].forEach(function (s) {
+      $(s).classList.toggle('hidden', s !== id);
+    });
+  };
+  var say = function (el, text, kind) {
+    el.textContent = text || '';
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+  };
+
+  /* ── The code ──────────────────────────────────────────────────────────
+     Twenty four letters, no I and no O. Digits are absent entirely, which is
+     what makes dropping those two enough: there is no 1 or 0 for them to be
+     confused with. A character outside the alphabet is a typo, and the honest
+     answer is to refuse it rather than guess which letter was meant. */
+  var ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+  function normalizeCode(raw) {
+    var cleaned = String(raw || '').replace(/[\s-]/g, '').toUpperCase();
+    if (cleaned.length !== 5) return null;
+    for (var i = 0; i < cleaned.length; i += 1) {
+      if (ALPHABET.indexOf(cleaned[i]) === -1) return null;
+    }
+    return cleaned;
+  }
+
+  /* The code arrives in the fragment when somebody used the share link. A
+     fragment never reaches the server, so it stays out of GitHub's logs and
+     out of any Referer header. */
+  var fromHash = normalizeCode(window.location.hash.replace('#', ''));
+  if (fromHash) $('code').value = fromHash;
+
+  $('code').addEventListener('input', function () {
+    $('claim').disabled = !normalizeCode($('code').value);
+    say($('code-msg'), '');
+  });
+  $('code').dispatchEvent(new Event('input'));
+
+  $('code').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !$('claim').disabled) $('claim').click();
+  });
+
+  $('claim').addEventListener('click', function () {
+    var code = normalizeCode($('code').value);
+    if (!code) return;
+    $('claim').disabled = true;
+    say($('code-msg'), 'Checking…');
+
+    fetch(API + '/v1/pair/redeem', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userCode: code })
+    }).then(function (res) {
+      return res.json().then(function (body) { return { ok: res.ok, body: body }; });
+    }).then(function (r) {
+      if (!r.ok) {
+        say($('code-msg'), r.body.error || 'That code is not valid.', 'bad');
+        $('claim').disabled = false;
+        return;
+      }
+      session = r.body.sessionToken;
+      userCode = code;
+      say($('code-msg'), '');
+      show('step-key');
+      $('drop').focus();
+    }).catch(function () {
+      say($('code-msg'), 'Could not reach Panvio. Check your connection.', 'bad');
+      $('claim').disabled = false;
+    });
+  });
+
+  /* ── The key file ─────────────────────────────────────────────────────
+     Checked here so a wrong file is caught before it crosses the network,
+     with the same rules the app applies. Deliberately duplicated from
+     lib/panvio/connectValidation.ts rather than shared: one regex and a DER
+     walk across two repos is not worth a package, and both sides have tests. */
+
+  function decodeBase64(body) {
+    try {
+      var bin = atob(body);
+      var out = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+      return out;
+    } catch (e) { return null; }
+  }
+
+  function readTlv(b, off) {
+    if (off + 2 > b.length) return null;
+    var tag = b[off], first = b[off + 1];
+    if (first < 0x80) return { tag: tag, start: off + 2, length: first, end: off + 2 + first };
+    var count = first & 0x7f;
+    if (count === 0 || count > 4 || off + 2 + count > b.length) return null;
+    var len = 0;
+    for (var i = 0; i < count; i += 1) len = (len << 8) | b[off + 2 + i];
+    return { tag: tag, start: off + 2 + count, length: len, end: off + 2 + count + len };
+  }
+
+  function readOid(b, t) {
+    var parts = [Math.floor(b[t.start] / 40), b[t.start] % 40], v = 0;
+    for (var i = t.start + 1; i < t.start + t.length; i += 1) {
+      v = (v << 7) | (b[i] & 0x7f);
+      if ((b[i] & 0x80) === 0) { parts.push(v); v = 0; }
+    }
+    return parts.join('.');
+  }
+
+  /* Is it a PKCS8 EC key? The marker and base64 checks cannot tell an Apple
+     key from any other well formed PKCS8 file, and a Play service account's
+     inner RSA key passes every one of them. */
+  function isPkcs8EcKey(pem) {
+    var body = String(pem || '')
+      .replace('-----BEGIN PRIVATE KEY-----', '')
+      .replace('-----END PRIVATE KEY-----', '')
+      .replace(/\s+/g, '');
+    if (!body || !/^[A-Za-z0-9+/=]+$/.test(body)) return false;
+    var b = decodeBase64(body);
+    if (!b) return false;
+    var outer = readTlv(b, 0);
+    if (!outer || outer.tag !== 0x30 || outer.end > b.length) return false;
+    var ver = readTlv(b, outer.start);
+    if (!ver || ver.tag !== 0x02 || ver.length !== 1 || b[ver.start] !== 0) return false;
+    var alg = readTlv(b, ver.end);
+    if (!alg || alg.tag !== 0x30) return false;
+    var oid = readTlv(b, alg.start);
+    if (!oid || oid.tag !== 0x06) return false;
+    if (readOid(b, oid) !== '1.2.840.10045.2.1') return false;
+    var priv = readTlv(b, alg.end);
+    return !!priv && priv.tag === 0x04 && priv.length > 0;
+  }
+
+  function checkKey(text) {
+    if (/-----BEGIN CERTIFICATE-----/.test(text)) {
+      return 'That is a certificate. Apple’s API key is the .p8 file from Users and Access.';
+    }
+    if (/-----BEGIN (EC|RSA) PRIVATE KEY-----/.test(text)) {
+      return 'That is a private key in the wrong format. Apple’s .p8 begins with "BEGIN PRIVATE KEY".';
+    }
+    if (/^\s*\{/.test(text)) {
+      return 'That looks like a Google service account file. This page wants Apple’s .p8 key.';
+    }
+    if (!/-----BEGIN PRIVATE KEY-----/.test(text) || !/-----END PRIVATE KEY-----/.test(text)) {
+      return 'That does not look like a .p8 key. It should begin with "-----BEGIN PRIVATE KEY-----".';
+    }
+    if (!isPkcs8EcKey(text)) {
+      return 'That is not the kind of key Apple issues. Check you chose the .p8 and not another key file.';
+    }
+    return null;
+  }
+
+  function refreshSend() {
+    var ok = !!keyText
+      && /^[A-Z0-9]{10}$/.test($('keyId').value.trim().toUpperCase())
+      && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+        .test($('issuerId').value.trim());
+    $('send').disabled = !ok;
+  }
+
+  function takeFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || '');
+      var problem = checkKey(text);
+      if (problem) {
+        keyText = null;
+        $('loaded').classList.add('hidden');
+        $('drop').classList.remove('hidden');
+        say($('key-msg'), problem, 'bad');
+        refreshSend();
+        return;
+      }
+      keyText = text.trim();
+      $('filename').textContent = file.name;
+      $('loaded').classList.remove('hidden');
+      $('drop').classList.add('hidden');
+      say($('key-msg'), '');
+
+      /* Apple names the download AuthKey_<KEYID>.p8, and the Key ID is not
+         inside the file: a .p8 is key material with no account metadata. The
+         filename is the only place the two travel together. */
+      var named = /^AuthKey_([A-Z0-9]{10})\.p8$/i.exec(file.name);
+      if (named && !$('keyId').value.trim()) $('keyId').value = named[1].toUpperCase();
+      refreshSend();
+    };
+    reader.onerror = function () { say($('key-msg'), 'That file could not be read.', 'bad'); };
+    reader.readAsText(file);
+  }
+
+  $('drop').addEventListener('click', function () { $('file').click(); });
+  $('drop').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); }
+  });
+  $('file').addEventListener('change', function (e) { takeFile(e.target.files[0]); });
+  ['dragenter', 'dragover'].forEach(function (n) {
+    $('drop').addEventListener(n, function (e) {
+      e.preventDefault(); $('drop').classList.add('over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (n) {
+    $('drop').addEventListener(n, function (e) {
+      e.preventDefault(); $('drop').classList.remove('over');
+    });
+  });
+  $('drop').addEventListener('drop', function (e) {
+    takeFile(e.dataTransfer && e.dataTransfer.files[0]);
+  });
+  $('clear').addEventListener('click', function () {
+    keyText = null; $('file').value = '';
+    $('loaded').classList.add('hidden');
+    $('drop').classList.remove('hidden');
+    say($('key-msg'), '');
+    refreshSend();
+  });
+  $('keyId').addEventListener('input', refreshSend);
+  $('issuerId').addEventListener('input', refreshSend);
+
+  /* ── Handing it over ──────────────────────────────────────────────────
+     One request. The key is not stored here, not put in a form that persists,
+     and not sent anywhere but Panvio. */
+  $('send').addEventListener('click', function () {
+    $('send').disabled = true;
+    say($('send-msg'), 'Sending…');
+
+    fetch(API + '/v1/pair/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': 'Bearer ' + session
+      },
+      body: JSON.stringify({
+        userCode: userCode,
+        key: keyText,
+        keyId: $('keyId').value.trim().toUpperCase(),
+        issuerId: $('issuerId').value.trim().toLowerCase()
+      })
+    }).then(function (res) {
+      return res.json().then(function (body) { return { status: res.status, body: body }; });
+    }).then(function (r) {
+      if (r.status === 200) {
+        keyText = null;
+        session = null;
+        show('step-done');
+        return;
+      }
+      if (r.status === 422) {
+        /* Apple would not take it. The phone shows the detail; this page says
+           the one thing that matters here, which is that they can try again
+           without going back for a new code. */
+        var failed = (r.body.checks || []).filter(function (c) { return !c.ok; })[0];
+        say($('send-msg'),
+          (failed && failed.detail ? failed.detail + ' ' : '')
+          + 'Your code is still good, so you can choose another file.', 'warn');
+        $('send').disabled = false;
+        return;
+      }
+      say($('send-msg'), r.body.error || 'That did not go through.', 'bad');
+      $('send').disabled = false;
+    }).catch(function () {
+      say($('send-msg'), 'Could not reach Panvio. Check your connection.', 'bad');
+      $('send').disabled = false;
+    });
+  });
+}());
+</script>
+</body>
+</html>
