@@ -173,8 +173,9 @@
         <li>Sign in at <a href="https://appstoreconnect.apple.com/access/integrations/api"
             target="_blank" rel="noopener noreferrer">appstoreconnect.apple.com</a>,
             then go to Users and Access &gt; Integrations &gt; Team Keys.</li>
-        <li>Click the + button. Name the key Panvio, set Access to App Manager,
-            then click Generate.</li>
+        <li>Click the + button. Name the key <span id="key-name">Panvio</span>,
+            set Access to <strong id="key-role">Admin</strong>, then click Generate.
+            <span id="key-why">Downloads and revenue need it.</span></li>
         <li>Click Download next to the new key. Apple gives you this file once.</li>
         <li>Copy the Issuer ID from the top of the page.</li>
       </ol>
@@ -298,6 +299,17 @@
       }
       session = r.body.sessionToken;
       userCode = code;
+      /* Which key the phone asked for decides the role. The main key reads
+         downloads and sales reports, which Apple gives only to Admin, Sales
+         and Reports or Finance, and Panvio requests the reports itself, which
+         only Admin may do. The reply key posts replies and nothing else, so it
+         stays at the narrower App Manager. Admin is the default because it is
+         the key almost everybody is here for. */
+      if (r.body.slot === 'asc.replies') {
+        $('key-name').textContent = 'Panvio Replies';
+        $('key-role').textContent = 'App Manager';
+        $('key-why').textContent = 'It only posts replies, so it needs no more than that.';
+      }
       say($('code-msg'), '');
       show('step-key');
       $('drop').focus();
